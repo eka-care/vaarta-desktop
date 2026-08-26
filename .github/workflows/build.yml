@@ -263,30 +263,30 @@ jobs:
           VERSION=${GITHUB_REF_NAME#prod-}
 
           # Versioned archive — organized by platform/arch
-          aws s3 sync dist/ s3://$S3_BUCKET/${VERSION}/windows/x64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/prod/${VERSION}/windows/x64/ \
             --exclude "*" \
             --include "*.exe" --include "*.exe.blockmap" \
             --exclude "*arm64*"
 
-          aws s3 sync dist/ s3://$S3_BUCKET/${VERSION}/windows/arm64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/prod/${VERSION}/windows/arm64/ \
             --exclude "*" \
             --include "*arm64*.exe" --include "*arm64*.exe.blockmap"
 
-          aws s3 sync dist/ s3://$S3_BUCKET/${VERSION}/mac/arm64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/prod/${VERSION}/mac/arm64/ \
             --exclude "*" \
             --include "*.dmg" --include "*.dmg.blockmap" \
             --include "*.zip" --include "*.zip.blockmap"
 
-          aws s3 cp dist/latest.yml     s3://$S3_BUCKET/${VERSION}/
-          aws s3 cp dist/latest-mac.yml s3://$S3_BUCKET/${VERSION}/
+          aws s3 cp dist/latest.yml     s3://$S3_BUCKET/prod/${VERSION}/
+          aws s3 cp dist/latest-mac.yml s3://$S3_BUCKET/prod/${VERSION}/
 
           # latest/ stays flat — auto-updater resolves binary paths relative to latest.yml
-          aws s3 sync dist/ s3://$S3_BUCKET/latest/ --delete
+          aws s3 sync dist/ s3://$S3_BUCKET/prod/latest/ --delete
 
       - name: Print download URLs
         run: |
           VERSION=${GITHUB_REF_NAME#prod-}
-          BASE=$BASE_URL
+          BASE=$BASE_URL/prod
           {
             echo "## Vaarta ${VERSION} — Download URLs"
             echo ""

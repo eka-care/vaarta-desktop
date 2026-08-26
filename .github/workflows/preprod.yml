@@ -225,30 +225,30 @@ jobs:
           VERSION=${GITHUB_REF_NAME#preprod-}
 
           # Versioned archive — organized by platform/arch
-          aws s3 sync dist/ s3://$S3_BUCKET/preprod/${VERSION}/windows/x64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/dev/${VERSION}/windows/x64/ \
             --exclude "*" \
             --include "*.exe" --include "*.exe.blockmap" \
             --exclude "*arm64*"
 
-          aws s3 sync dist/ s3://$S3_BUCKET/preprod/${VERSION}/windows/arm64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/dev/${VERSION}/windows/arm64/ \
             --exclude "*" \
             --include "*arm64*.exe" --include "*arm64*.exe.blockmap"
 
-          aws s3 sync dist/ s3://$S3_BUCKET/preprod/${VERSION}/mac/arm64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/dev/${VERSION}/mac/arm64/ \
             --exclude "*" \
             --include "*.dmg" --include "*.dmg.blockmap" \
             --include "*.zip" --include "*.zip.blockmap"
 
-          aws s3 cp dist/latest.yml     s3://$S3_BUCKET/preprod/${VERSION}/
-          aws s3 cp dist/latest-mac.yml s3://$S3_BUCKET/preprod/${VERSION}/
+          aws s3 cp dist/latest.yml     s3://$S3_BUCKET/dev/${VERSION}/
+          aws s3 cp dist/latest-mac.yml s3://$S3_BUCKET/dev/${VERSION}/
 
           # latest/ stays flat — auto-updater resolves binary paths relative to latest.yml
-          aws s3 sync dist/ s3://$S3_BUCKET/preprod/latest/ --delete
+          aws s3 sync dist/ s3://$S3_BUCKET/dev/latest/ --delete
 
       - name: Print download URLs
         run: |
           VERSION=${GITHUB_REF_NAME#preprod-}
-          BASE=$BASE_URL/preprod
+          BASE=$BASE_URL/dev
           {
             echo "## Vaarta ${VERSION} (preprod) — Download URLs"
             echo ""

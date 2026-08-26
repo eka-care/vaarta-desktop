@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const AUTO_UPDATE_FEED_URL = 'https://vaarta-app.ekacare.co/latest/';
+const AUTO_UPDATE_FEED_URL = 'https://vaarta-app.ekacare.co/prod/latest/';
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 60 * 1000;
 
 export function logUpdater(message: string, meta?: unknown): void {

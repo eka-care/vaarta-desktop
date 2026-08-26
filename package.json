@@ -28,7 +28,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://vaarta-app.ekacare.co/latest/"
+        "url": "https://vaarta-app.ekacare.co/prod/latest/"
       }
     ],
     "mac": {
