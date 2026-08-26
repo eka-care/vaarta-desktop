@@ -12,8 +12,8 @@ concurrency:
 # ── Fill in your non-secret app env vars here ─────────────────────────────────
 env:
   GITHUB_TOKEN: ${{ secrets.REPO_READ_ONLY_TOKEN }}
-  S3_BUCKET: eka-dev-updates
-  BASE_URL: https://updates.eka.care
+  S3_BUCKET: vaarta-app
+  BASE_URL: https://vaarta-app.ekacare.co
   NEXT_PUBLIC_ENV: PROD
   NEXT_PUBLIC_MIX_PANEL_KEY: ${{ secrets.NEXT_PUBLIC_MIX_PANEL_KEY }}
   NEXT_PUBLIC_CRISP_WEBSITE_ID: ${{ secrets.NEXT_PUBLIC_CRISP_WEBSITE_ID }}
@@ -225,45 +225,46 @@ jobs:
           VERSION=${GITHUB_REF_NAME#preprod-}
 
           # Versioned archive — organized by platform/arch
-          aws s3 sync dist/ s3://$S3_BUCKET/ekascribe/${VERSION}/windows/x64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/preprod/${VERSION}/windows/x64/ \
             --exclude "*" \
             --include "*.exe" --include "*.exe.blockmap" \
             --exclude "*arm64*"
 
-          aws s3 sync dist/ s3://$S3_BUCKET/ekascribe/${VERSION}/windows/arm64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/preprod/${VERSION}/windows/arm64/ \
             --exclude "*" \
             --include "*arm64*.exe" --include "*arm64*.exe.blockmap"
 
-          aws s3 sync dist/ s3://$S3_BUCKET/ekascribe/${VERSION}/mac/arm64/ \
+          aws s3 sync dist/ s3://$S3_BUCKET/preprod/${VERSION}/mac/arm64/ \
             --exclude "*" \
-            --include "*.dmg" --include "*.dmg.blockmap" --include "*-mac.zip"
+            --include "*.dmg" --include "*.dmg.blockmap" \
+            --include "*.zip" --include "*.zip.blockmap"
 
-          aws s3 cp dist/latest.yml     s3://$S3_BUCKET/ekascribe/${VERSION}/
-          aws s3 cp dist/latest-mac.yml s3://$S3_BUCKET/ekascribe/${VERSION}/
+          aws s3 cp dist/latest.yml     s3://$S3_BUCKET/preprod/${VERSION}/
+          aws s3 cp dist/latest-mac.yml s3://$S3_BUCKET/preprod/${VERSION}/
 
           # latest/ stays flat — auto-updater resolves binary paths relative to latest.yml
-          aws s3 sync dist/ s3://$S3_BUCKET/ekascribe/latest/ --delete
+          aws s3 sync dist/ s3://$S3_BUCKET/preprod/latest/ --delete
 
       - name: Print download URLs
         run: |
           VERSION=${GITHUB_REF_NAME#preprod-}
-          BASE=$BASE_URL/ekascribe
+          BASE=$BASE_URL/preprod
           {
-            echo "## EkaScribe ${VERSION} (preprod) — Download URLs"
+            echo "## Vaarta ${VERSION} (preprod) — Download URLs"
             echo ""
             echo "### Versioned \`${VERSION}\`"
             echo "| Platform | Arch | Link |"
             echo "| --- | --- | --- |"
-            echo "| Windows | x64 | [EkaScribe Setup.exe](${BASE}/${VERSION}/windows/x64/EkaScribe%20Setup.exe) |"
-            echo "| Windows | arm64 | [EkaScribe Setup-arm64.exe](${BASE}/${VERSION}/windows/arm64/EkaScribe%20Setup-arm64.exe) |"
-            echo "| macOS | arm64 | [EkaScribe.dmg](${BASE}/${VERSION}/mac/arm64/EkaScribe.dmg) |"
-            echo "| macOS | arm64 (zip) | [EkaScribe-mac.zip](${BASE}/${VERSION}/mac/arm64/EkaScribe-mac.zip) |"
+            echo "| Windows | x64 | [Vaarta Setup.exe](${BASE}/${VERSION}/windows/x64/Vaarta%20Setup.exe) |"
+            echo "| Windows | arm64 | [Vaarta Setup-arm64.exe](${BASE}/${VERSION}/windows/arm64/Vaarta%20Setup-arm64.exe) |"
+            echo "| macOS | arm64 | [Vaarta.dmg](${BASE}/${VERSION}/mac/arm64/Vaarta.dmg) |"
+            echo "| macOS | arm64 (zip) | [Vaarta.zip](${BASE}/${VERSION}/mac/arm64/Vaarta.zip) |"
             echo ""
             echo "### Latest"
             echo "| Platform | Arch | Link |"
             echo "| --- | --- | --- |"
-            echo "| Windows | x64 | [EkaScribe Setup.exe](${BASE}/latest/EkaScribe%20Setup.exe) |"
-            echo "| Windows | arm64 | [EkaScribe Setup-arm64.exe](${BASE}/latest/EkaScribe%20Setup-arm64.exe) |"
-            echo "| macOS | arm64 | [EkaScribe.dmg](${BASE}/latest/EkaScribe.dmg) |"
-            echo "| macOS | arm64 (zip) | [EkaScribe-mac.zip](${BASE}/latest/EkaScribe-mac.zip) |"
+            echo "| Windows | x64 | [Vaarta Setup.exe](${BASE}/latest/Vaarta%20Setup.exe) |"
+            echo "| Windows | arm64 | [Vaarta Setup-arm64.exe](${BASE}/latest/Vaarta%20Setup-arm64.exe) |"
+            echo "| macOS | arm64 | [Vaarta.dmg](${BASE}/latest/Vaarta.dmg) |"
+            echo "| macOS | arm64 (zip) | [Vaarta.zip](${BASE}/latest/Vaarta.zip) |"
           } >> "$GITHUB_STEP_SUMMARY"

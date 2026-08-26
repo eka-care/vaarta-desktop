@@ -28,7 +28,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://vaarta.bharatai.gov.in/downloads/latest/"
+        "url": "https://vaarta-app.ekacare.co/latest/"
       }
     ],
     "mac": {
