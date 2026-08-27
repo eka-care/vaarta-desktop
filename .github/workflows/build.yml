@@ -12,16 +12,13 @@ concurrency:
 
 # ── Fill in your non-secret app env vars here ─────────────────────────────────
 env:
-  GITHUB_TOKEN: ${{ secrets.REPO_READ_ONLY_TOKEN }}
   S3_BUCKET: vaarta-app
   BASE_URL: https://vaarta-app.ekacare.co
   NEXT_PUBLIC_ENV: PROD
-  SCRIBE: ${{ secrets.scribe }}
   ELECTRON_ENV: |
     API_URL=https://api.eka.care
     SENTRY_DSN=
     NEXT_PUBLIC_ENV=PROD
-    scribe=${{ secrets.scribe }}
 
 jobs:
   # ─── Windows ──────────────────────────────────────────────────────────────
@@ -35,7 +32,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.REPO_READ_ONLY_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
@@ -128,7 +124,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.REPO_READ_ONLY_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
