@@ -15,15 +15,11 @@ env:
   S3_BUCKET: vaarta-app
   BASE_URL: https://vaarta-app.ekacare.co
   NEXT_PUBLIC_ENV: PROD
-  NEXT_PUBLIC_MIX_PANEL_KEY: ${{ secrets.NEXT_PUBLIC_MIX_PANEL_KEY }}
-  NEXT_PUBLIC_CRISP_WEBSITE_ID: ${{ secrets.NEXT_PUBLIC_CRISP_WEBSITE_ID }}
   SCRIBE: ${{ secrets.scribe }}
   ELECTRON_ENV: |
     API_URL=https://api.eka.care
     SENTRY_DSN=
     NEXT_PUBLIC_ENV=PROD
-    NEXT_PUBLIC_MIX_PANEL_KEY=${{ secrets.NEXT_PUBLIC_MIX_PANEL_KEY }}
-    NEXT_PUBLIC_CRISP_WEBSITE_ID=${{ secrets.NEXT_PUBLIC_CRISP_WEBSITE_ID }}
     scribe=${{ secrets.scribe }}
 
 
