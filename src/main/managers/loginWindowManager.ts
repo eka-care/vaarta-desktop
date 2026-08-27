@@ -95,6 +95,12 @@ function exitPipMode(): void {
   const win = pipModeWindow;
   if (!win || win.isDestroyed() || !savedBounds) return;
 
+  if (win.isMinimized()) {
+    win.once('restore', () => exitPipMode());
+    win.restore();
+    return;
+  }
+
   // Unlock controls and size constraints before restoring.
   win.setAlwaysOnTop(false);
   win.setResizable(savedResizable);
