@@ -15,7 +15,7 @@ env:
   BASE_URL: https://vaarta-app.ekacare.co
   NEXT_PUBLIC_ENV: PROD
   ELECTRON_ENV: |
-    API_URL=https://api.eka.care
+    EKA_API_UPSTREAM=https://bharat-backend.dev.eka.care
     SENTRY_DSN=
     NEXT_PUBLIC_ENV=PROD
 
