@@ -1,0 +1,64 @@
+# Secret and vulnerability scanning for a PUBLIC repo.
+# Open-source scanners only, run on ephemeral GitHub-hosted runners with no secrets.
+
+name: Security
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1'   # Mondays 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Secret scanning across full git history
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0          # full history - a secret deleted in a later commit still leaked
+          persist-credentials: false
+
+      # Run the CLI via its own image rather than gitleaks-action, which requires
+      # a paid licence key for organisation-owned repos.
+      - name: gitleaks detect
+        run: |
+          docker run --rm -v "$PWD:/repo" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1 \
+            detect --source=/repo --redact --no-banner --exit-code 1
+
+  # Dependency / config vulnerability scanning
+  trivy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write   # upload SARIF to the Security tab (free on public repos)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          format: sarif
+          output: trivy.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0'   # report, don't block - see PR description for rationale
+
+      - name: Upload results to code scanning
+        uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+        with:
+          sarif_file: trivy.sarif
+          category: trivy
