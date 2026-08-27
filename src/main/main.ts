@@ -363,6 +363,36 @@ function openSettingsWindow(): void {
   });
 }
 
+// Node's URL gives origin 'null' for non-standard schemes like app://, so an
+// origin string comparison silently never matches — compare protocol+host.
+function isEkascribeAppUrl(parsed: URL): boolean {
+  const appOrigin = new URL(getEkascribeAppOrigin());
+  return parsed.protocol === appOrigin.protocol && parsed.host === appOrigin.host;
+}
+
+function openAppPageWindow(url: string): void {
+  startEkascribeWeb().then(() => {
+    const win = new BrowserWindow({
+      width: 1100,
+      height: 700,
+      minWidth: 640,
+      minHeight: 480,
+      title: 'Vaarta',
+      backgroundColor: '#fcfcfc',
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    attachNavigationGuards(win);
+    win.loadURL(url);
+  }).catch((err) => {
+    console.error('[window] failed to open app page window', url, err);
+  });
+}
+
 function normalizeIsInUse(value: unknown): boolean | null {
   if (value === true || value === false) return value;
   if (typeof value === 'string') {
@@ -648,7 +678,7 @@ function registerDeepLinkProtocol() {
 function isTrustedRendererNavigation(url: string): boolean {
   try {
     const parsed = new URL(url);
-    if (parsed.origin === getEkascribeAppOrigin()) return true;
+    if (isEkascribeAppUrl(parsed)) return true;
     if (
       MAIN_WINDOW_VITE_DEV_SERVER_URL &&
       parsed.origin === new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).origin
@@ -1342,8 +1372,14 @@ app.on('ready', async () => {
   });
   ipcMain.handle('system:openExternal', (_event, url: string) => {
     try {
-      const { protocol } = new URL(url);
-      if (protocol !== 'https:' && protocol !== 'http:') return;
+      const parsed = new URL(url);
+      // In-app pages (e.g. /tutorial) arrive with the app:// origin, which the
+      // OS browser can't open — give them their own window, like a new tab.
+      if (isEkascribeAppUrl(parsed)) {
+        openAppPageWindow(url);
+        return;
+      }
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return;
       return shell.openExternal(url);
     } catch {
       // malformed URL — ignore
