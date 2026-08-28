@@ -1,7 +1,7 @@
 {
   "name": "vaarta",
   "productName": "Vaarta",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Vaarta — an ambient AI medical scribe for the desktop, by Eka Care.",
   "main": ".vite/build/main.js",
   "private": true,
