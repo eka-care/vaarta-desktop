@@ -1,7 +1,7 @@
 {
   "name": "vaarta",
   "productName": "Vaarta",
-  "version": "1.0.2",
+  "version": "1.0.6",
   "description": "Vaarta — an ambient AI medical scribe for the desktop, by Eka Care.",
   "main": ".vite/build/main.js",
   "private": true,
@@ -60,8 +60,18 @@
         }
       ],
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ]
     },
     "win": {
@@ -114,7 +124,7 @@
     }
   },
   "scripts": {
-    "build:mac-helper": "node -e \"const cp=require('child_process');const fs=require('fs');const path=require('path');const buildRoot=path.resolve(process.cwd(),'mac/build');const symroot=buildRoot;const configDir=path.join(buildRoot,'Release');const derivedDataPath=path.join(buildRoot,'DerivedData');const helperAppPath=path.join(configDir,'EkaCareDesktopHelper.app');fs.rmSync(helperAppPath,{recursive:true,force:true});fs.rmSync(derivedDataPath,{recursive:true,force:true});cp.execFileSync('xcodebuild',['-project','mac/EkaCareDesktopHelper/EkaCareDesktopHelper.xcodeproj','-scheme','EkaCareDesktopHelper','-configuration','Release','build','-quiet','-derivedDataPath',derivedDataPath,'SYMROOT='+symroot,'CONFIGURATION_BUILD_DIR='+configDir],{stdio:'inherit'});\"",
+    "build:mac-helper": "node -e \"const cp=require('child_process');const fs=require('fs');const path=require('path');const buildRoot=path.resolve(process.cwd(),'mac/build');const symroot=buildRoot;const configDir=path.join(buildRoot,'Release');const derivedDataPath=path.join(buildRoot,'DerivedData');const helperAppPath=path.join(configDir,'EkaCareDesktopHelper.app');fs.rmSync(helperAppPath,{recursive:true,force:true});fs.rmSync(derivedDataPath,{recursive:true,force:true});cp.execFileSync('xcodebuild',['-project','mac/EkaCareDesktopHelper/EkaCareDesktopHelper.xcodeproj','-scheme','EkaCareDesktopHelper','-configuration','Release','build','-quiet','-derivedDataPath',derivedDataPath,'SYMROOT='+symroot,'CONFIGURATION_BUILD_DIR='+configDir,'ARCHS=arm64 x86_64','ONLY_ACTIVE_ARCH=NO'],{stdio:'inherit'});\"",
     "build:mac-helper:clean": "node -e \"const cp=require('child_process');const fs=require('fs');fs.rmSync('mac/build', {recursive:true, force:true});cp.execSync('npm run build:mac-helper', {stdio:'inherit'});\"",
     "build:win-helper": "dotnet build windows/EkaDeskDocHelper/EkaDeskDocHelper/EkaDeskDocHelper.csproj -c Release -v minimal",
     "build:win-helper:x64": "dotnet publish windows/EkaDeskDocHelper/EkaDeskDocHelper/EkaDeskDocHelper.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -v minimal",
@@ -129,15 +139,15 @@
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "make:mac": "node -e \"const cp=require('child_process');const fs=require('fs');const path=require('path');const ef=path.resolve('electron.env');if(fs.existsSync(ef))fs.copyFileSync(ef,path.resolve('external/ekascribe/apps/web/.env.local'));const helperPath=path.resolve(process.cwd(),'mac/build/Release/EkaCareDesktopHelper.app');cp.execSync('npm run build:mac-helper:clean', {stdio:'inherit'});if(!fs.existsSync(helperPath)){throw new Error('Mac helper missing at '+helperPath);}cp.execSync('npm run package', {stdio:'inherit'});cp.execSync('electron-builder --mac dmg zip --config.mac.identity=null --config.mac.notarize=false', {stdio:'inherit', env:{...process.env, CSC_IDENTITY_AUTO_DISCOVERY:'false'}});\"",
+    "make:mac": "node -e \"const cp=require('child_process');const fs=require('fs');const path=require('path');const ef=path.resolve('electron.env');if(fs.existsSync(ef))fs.copyFileSync(ef,path.resolve('external/ekascribe/apps/web/.env.local'));const helperPath=path.resolve(process.cwd(),'mac/build/Release/EkaCareDesktopHelper.app');cp.execSync('npm run build:mac-helper:clean', {stdio:'inherit'});if(!fs.existsSync(helperPath)){throw new Error('Mac helper missing at '+helperPath);}cp.execSync('npm run package', {stdio:'inherit'});cp.execSync('electron-builder --mac dmg zip --universal --config.mac.identity=null --config.mac.notarize=false', {stdio:'inherit', env:{...process.env, CSC_IDENTITY_AUTO_DISCOVERY:'false'}});\"",
     "publish:forge": "electron-forge publish",
     "publish": "node -e \"const cp=require('child_process');if(process.platform==='win32'){cp.execSync('npm run package', {stdio:'inherit'});cp.execSync('npm run build:win-helper:all', {stdio:'inherit'});cp.execSync('electron-builder --win nsis --x64 --arm64 --publish always', {stdio:'inherit', env:process.env});}else{cp.execSync('npm run publish:forge', {stdio:'inherit'});}\"",
     "make:win": "node -e \"const cp=require('child_process'),fs=require('fs'),path=require('path');const ef=path.resolve('electron.env');if(fs.existsSync(ef))fs.copyFileSync(ef,path.resolve('external/ekascribe/apps/web/.env.local'));const pfx=path.resolve(process.cwd(),'certs','dev-code-signing.pfx');if(!fs.existsSync(pfx)){cp.execSync('powershell -ExecutionPolicy Bypass -File scripts/windows/create-dev-code-signing-cert.ps1',{stdio:'inherit'});}const pwd=process.env.CSC_KEY_PASSWORD||'dev-only-change-me';const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));const cfg=JSON.parse(JSON.stringify(pkg.build));cfg.win.signtoolOptions={sign:'scripts/windows/local-sign.cjs'};const tmp='.eb-local.json';fs.writeFileSync(tmp,JSON.stringify(cfg));try{cp.execSync('npm run package',{stdio:'inherit'});cp.execSync('npm run build:win-helper:all',{stdio:'inherit'});cp.execSync('electron-builder --win nsis --x64 --arm64 --config '+tmp,{stdio:'inherit',env:{...process.env,CSC_IDENTITY_AUTO_DISCOVERY:'false',CSC_LINK:pfx,CSC_KEY_PASSWORD:pwd}})}finally{try{fs.unlinkSync(tmp)}catch(e){}};\"",
     "dist:win": "node -e \"const cp=require('child_process');cp.execSync('npm run package', {stdio:'inherit'});cp.execSync('npm run build:win-helper:all', {stdio:'inherit'});cp.execSync('electron-builder --win nsis --x64 --arm64', {stdio:'inherit', env:process.env});\"",
-    "dist:mac:update": "electron-builder --mac zip",
-    "publish:update": "node -e \"const cp=require('child_process');if(process.platform==='win32') cp.execSync('npm run build:win-helper:all', {stdio:'inherit'});cp.execSync('electron-builder --win nsis --x64 --arm64 --mac zip --publish always', {stdio:'inherit', env:process.env});\"",
+    "dist:mac:update": "electron-builder --mac zip --universal",
+    "publish:update": "node -e \"const cp=require('child_process');if(process.platform==='win32') cp.execSync('npm run build:win-helper:all', {stdio:'inherit'});cp.execSync('electron-builder --win nsis --x64 --arm64 --publish always', {stdio:'inherit', env:process.env});cp.execSync('electron-builder --mac zip --universal --publish always', {stdio:'inherit', env:process.env});\"",
     "lint:tslint": "tslint -p tsconfig.tslint.json -c tslint.json",
-    "dist:mac": "node -e \"const cp=require('child_process');const fs=require('fs');const path=require('path');const helperPath=path.resolve(process.cwd(),'mac/build/Release/EkaCareDesktopHelper.app');cp.execSync('npm run build:mac-helper:clean', {stdio:'inherit'});if(!fs.existsSync(helperPath)){throw new Error('Mac helper missing at '+helperPath);}cp.execSync('npm run package', {stdio:'inherit'});cp.execSync('electron-builder --mac dmg zip', {stdio:'inherit'});\""
+    "dist:mac": "node -e \"const cp=require('child_process');const fs=require('fs');const path=require('path');const helperPath=path.resolve(process.cwd(),'mac/build/Release/EkaCareDesktopHelper.app');cp.execSync('npm run build:mac-helper:clean', {stdio:'inherit'});if(!fs.existsSync(helperPath)){throw new Error('Mac helper missing at '+helperPath);}cp.execSync('npm run package', {stdio:'inherit'});cp.execSync('electron-builder --mac dmg zip --universal', {stdio:'inherit'});\""
   },
   "config": {
     "forge": "./forge.config.ts"
