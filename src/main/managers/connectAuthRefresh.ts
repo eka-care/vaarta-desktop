@@ -140,8 +140,8 @@ export async function refreshConnectAuthTokensDeduped(
 
   const existing = refreshInFlight.get(ekaHost);
   if (existing) {
-    logRefresh('[connectAuthRefresh] in-flight refresh detected — waiting for result', { ekaHost });
-    await existing.catch(() => {});
+    logRefresh('[connectAuthRefresh] joining in-flight refresh', { ekaHost });
+    return existing;
   }
   logRefresh('[connectAuthRefresh] starting fresh refresh', { ekaHost, clientId });
   const promise = (async () => {
