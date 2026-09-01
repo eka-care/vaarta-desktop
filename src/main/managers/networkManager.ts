@@ -49,11 +49,13 @@ function toAbsoluteUrl(url: string): string {
   }
 }
 
+const SECRET_HEADERS = new Set(['auth', 'authorization', 'cookie']);
+
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  const sanitized: Record<string, string> = { ...headers };
-  if (sanitized.auth) sanitized.auth = '<redacted>';
-  if (sanitized.authorization) sanitized.authorization = '<redacted>';
-  if (sanitized.cookie) sanitized.cookie = '<redacted>';
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    sanitized[key] = SECRET_HEADERS.has(key.toLowerCase()) ? '<redacted>' : value;
+  }
   return sanitized;
 }
 
