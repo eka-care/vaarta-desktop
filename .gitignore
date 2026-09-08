@@ -38,6 +38,7 @@ build/Release
 
 # dist
 dist/
+dist-arm64/
 
 # Dependency directories
 node_modules/
