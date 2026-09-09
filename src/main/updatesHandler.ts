@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const AUTO_UPDATE_FEED_URL = 'https://vaarta-app.ekacare.co/prod/latest/';
+const ARM64_UPDATE_FEED_URL = 'https://vaarta-app.ekacare.co/prod/latest-arm64/';
 const AUTO_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 60 * 1000;
 
 export function logUpdater(message: string, meta?: unknown): void {
@@ -278,11 +279,21 @@ export function setupAutoUpdates(
 ): void {
   log = logger;
   getMainWindowRef = mainWindowRefGetter;
-  logUpdater('setupAutoUpdates called', { isPackaged: app.isPackaged, version: app.getVersion() });
+  // Apple Silicon stays on the arm64 build; every other Mac takes the universal one.
+  const feedUrl =
+    process.platform === 'darwin' && process.arch === 'arm64'
+      ? ARM64_UPDATE_FEED_URL
+      : AUTO_UPDATE_FEED_URL;
+  logUpdater('setupAutoUpdates called', {
+    isPackaged: app.isPackaged,
+    version: app.getVersion(),
+    arch: process.arch,
+    feedUrl,
+  });
   if (!app.isPackaged) return;
   autoUpdater.setFeedURL({
     provider: 'generic',
-    url: AUTO_UPDATE_FEED_URL,
+    url: feedUrl,
   });
   autoUpdater.autoDownload = false;
   if (!hasRegisteredAutoUpdaterListeners) {
