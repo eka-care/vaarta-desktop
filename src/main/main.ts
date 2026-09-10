@@ -1263,6 +1263,19 @@ function getTrayImage(): Electron.NativeImage {
   return nativeImage.createFromPath(path.join(trayDir, iconFile));
 }
 
+// Both menus cache `recordingRunning` in their labels AND in their click closures, so every
+// change to it must rebuild them — a stale menu sends the command for the state it was built in.
+function syncRecordingMenus(): void {
+  const currentMenu = Menu.getApplicationMenu();
+  const recordingItem = currentMenu?.getMenuItemById('recording-toggle');
+  if (recordingItem) {
+    recordingItem.label = recordingRunning ? 'Stop Recording' : 'Start Recording';
+    Menu.setApplicationMenu(currentMenu);
+  }
+  tray?.setContextMenu(buildTrayMenu());
+  updateTrayTitle();
+}
+
 function createTray(): void {
   tray = new Tray(getTrayImage());
   tray.setToolTip(app.name);
@@ -1541,14 +1554,7 @@ app.on('ready', async () => {
       shortcutRecordingStartedAt = null;
     }
     console.log('[menu] scribe:statusUpdate', { processingStatus, recordingRunning });
-    const currentMenu = Menu.getApplicationMenu();
-    const recordingItem = currentMenu?.getMenuItemById('recording-toggle');
-    if (recordingItem) {
-      recordingItem.label = recordingRunning ? 'Stop Recording' : 'Start Recording';
-      Menu.setApplicationMenu(currentMenu);
-    }
-    tray?.setContextMenu(buildTrayMenu());
-    updateTrayTitle();
+    syncRecordingMenus();
     // Only forward recording-state statuses to the native overlay.
     // Any other status (idle, output, error, done, etc.) maps to .prompt in the native state machine,
     // which would override the .processed state set by scribe.processing.completed.
@@ -1567,6 +1573,7 @@ app.on('ready', async () => {
     logOverlayHelper('renderer->main ipc scribe:processingCompleted', { transactionId, status });
     cachedScribeStatus = { processingStatus: 'output', sessionId: cachedScribeStatus.sessionId };
     recordingRunning = false;
+    syncRecordingMenus();
     if (nativeBridge?.isConnected()) {
       nativeBridge.sendEvent('scribe.processing.completed', { transactionId, status });
       logOverlayHelper('main->native event sent', {
@@ -1585,6 +1592,7 @@ app.on('ready', async () => {
     logOverlayHelper('renderer->main ipc scribe:session-discarded');
     cachedScribeStatus = { processingStatus: 'not-started', sessionId: '' };
     recordingRunning = false;
+    syncRecordingMenus();
     if (nativeBridge?.isConnected()) {
       nativeBridge.sendEvent('scribe.session.discarded', null);
       logOverlayHelper('main->native event sent', { eventName: 'scribe.session.discarded' });
@@ -1595,6 +1603,7 @@ app.on('ready', async () => {
     logOverlayHelper('renderer->main ipc scribe:error', { errorCode, errorMessage });
     cachedScribeStatus = { processingStatus: 'error', sessionId: cachedScribeStatus.sessionId };
     recordingRunning = false;
+    syncRecordingMenus();
     if (nativeBridge?.isConnected()) {
       nativeBridge.sendEvent('scribe.error', { errorCode, errorMessage });
       logOverlayHelper('main->native event sent', { eventName: 'scribe.error', errorCode, errorMessage });
