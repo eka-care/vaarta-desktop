@@ -186,7 +186,7 @@ export function positionUpdatePopupInsideApp(_hostWindow: BrowserWindow): void {
   // Update is now shown as an in-app banner in the renderer; no popup to position.
 }
 
-function showUpdatePopup(): void {
+export function showUpdatePopup(): void {
   if (!isUpdateAvailable) return;
   const hostWindow = getMainWindowRef() ?? BrowserWindow.getAllWindows()[0];
   if (!hostWindow || hostWindow.isDestroyed()) return;
