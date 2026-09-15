@@ -7,12 +7,16 @@ namespace EkaDeskDocHelper.Services;
 
 internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
 {
+    // Mic must stay idle this long before we report "not in use" — meeting apps briefly release it on audio reconnect.
+    private static readonly TimeSpan IdleConfirmationWindow = TimeSpan.FromSeconds(2);
+
     private readonly object _gate = new();
 
     private Thread? _workerThread;
     private CancellationTokenSource? _cts;
     private bool _micActive;
     private int _activeSessionCount;
+    private DateTime? _idleSince;
 
     private bool _started;
     private bool _disposed;
@@ -101,6 +105,23 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
         lock (_gate)
         {
             if (_disposed) return;
+
+            if (isActive)
+            {
+                _idleSince = null;
+            }
+            else if (_activeSessionCount == 0)
+            {
+                _idleSince = null;
+                return;
+            }
+            else
+            {
+                _idleSince ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - _idleSince.Value < IdleConfirmationWindow) return;
+                _idleSince = null;
+            }
+
             if (activeCount == _activeSessionCount) return;
 
             previousActiveCount = _activeSessionCount;
@@ -228,6 +249,7 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
         try { _cts?.Cancel(); } catch { /* ignore */ }
         _cts?.Dispose();
         _cts = null;
+        _idleSince = null;
 
         // Don't Join() on UI thread; just let background thread exit.
         _workerThread = null;

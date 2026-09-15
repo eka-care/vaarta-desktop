@@ -16,9 +16,7 @@ import AppKit
 /// Instead we enumerate audio process objects (macOS 14.0+) and exclude any
 /// process whose bundle identifier belongs to our Electron host
 /// (`care.eka.ekascribe` and its XPC/framework helpers) or to this helper app
-/// itself. The emitted `onUsageChanged(Bool)` reflects **only** third-party
-/// microphone usage, so the existing state machine in `BridgeAppState` does
-/// the right thing in every combination:
+/// itself. `onUsersChanged(current:added:)` reports the **set** of such apps:
 ///
 /// 1. Third-party only                 -> true, prompt is shown.
 /// 2. Third-party + our app            -> true, recording overlay is shown.
@@ -27,27 +25,31 @@ import AppKit
 /// 4. Our app only                     -> false (never fires), no prompt.
 /// 5. Third-party stops + we stop together -> false, idempotent.
 ///
-/// Falling edges (`false`) are emitted only after **third-party** input has
-/// stayed idle for `thirdPartyMicIdleConfirmationSeconds`, so consumers that
-/// stop recording on mic release do not tear down while CoreAudio is still
-/// settling.
+/// Apps are added immediately but removed only after `micUserRemovalConfirmationSeconds`.
+/// `id` is the parent bundle ID so a multi-process app collapses to one entry.
+struct MicUser: Hashable {
+  let id: String
+  let displayName: String
+
+  static func == (lhs: MicUser, rhs: MicUser) -> Bool { lhs.id == rhs.id }
+  func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
 final class MacMicrophoneUsageMonitor {
   /// Matches `build.appId` in the root `package.json` (electron-builder).
-  private static let electronHostBundleIDPrefix = "care.eka.ekascribe"
-  private static let helperBundleID = Bundle.main.bundleIdentifier ?? "com.orbi.EkaCareDesktopHelper"
-  /// Wall-clock time `isThirdPartyMicInUse()` must stay `false` (while we
-  /// still had last emitted `true`) before we notify consumers — aligns with
-  /// stopping recording only after mic usage has actually quiesced.
-  private static let thirdPartyMicIdleConfirmationSeconds: TimeInterval = 2
+  private static let electronHostBundleIDPrefix = "care.eka.vaarta"
+  private static let helperBundleID = Bundle.main.bundleIdentifier ?? "com.orbi.EkaCareDesktopHelper.vaarta"
+  /// How long an app must stay absent before we report it as gone.
+  private static let micUserRemovalConfirmationSeconds: TimeInterval = 2
   private static let pollInterval: DispatchTimeInterval = .seconds(1)
 
   private let queue = DispatchQueue(label: "com.ekacare.mac-helper.mic")
   private var timer: DispatchSourceTimer?
-  private var lastEmittedState: Bool?
-  /// First tick time we saw `!inUse` while the last **emitted** state was still `true`.
-  private var thirdPartyMicIdleSince: Date?
+  private var emittedUsers: Set<MicUser>?
+  /// When each app was first seen missing.
+  private var removalPendingSince: [MicUser: Date] = [:]
 
-  var onUsageChanged: ((Bool) -> Void)?
+  var onUsersChanged: ((_ current: Set<MicUser>, _ added: Set<MicUser>) -> Void)?
 
   func start() {
     stop()
@@ -63,103 +65,92 @@ final class MacMicrophoneUsageMonitor {
   func stop() {
     timer?.cancel()
     timer = nil
-    lastEmittedState = nil
-    thirdPartyMicIdleSince = nil
+    emittedUsers = nil
+    removalPendingSince = [:]
   }
 
   // MARK: - Polling loop
 
   private func tick() {
-    let inUse = Self.isThirdPartyMicInUse()
+    let observed = Self.thirdPartyMicUsers()
 
     // First sample: emit unconditionally so the app state settles.
-    guard let last = lastEmittedState else {
-      lastEmittedState = inUse
-      thirdPartyMicIdleSince = nil
-      print("[MacHelper] mic usage (third-party) initial=\(inUse)")
-      onUsageChanged?(inUse)
+    guard var current = emittedUsers else {
+      emittedUsers = observed
+      removalPendingSince = [:]
+      print("[MacHelper] mic users initial=\(Self.describe(observed))")
+      onUsersChanged?(observed, observed)
       return
     }
 
-    if inUse {
-      thirdPartyMicIdleSince = nil
-      if last == true { return }
-      lastEmittedState = true
-      print("[MacHelper] mic usage (third-party) changed -> true")
-      onUsageChanged?(true)
-      return
-    }
+    let added = observed.subtracting(current)
 
-    // Rising edges are emitted immediately; falling edges require sustained idle.
-    if last == false {
-      thirdPartyMicIdleSince = nil
-      return
+    // Departures must persist before we believe them.
+    let now = Date()
+    var confirmedRemovals: Set<MicUser> = []
+    for user in current.subtracting(observed) {
+      let since = removalPendingSince[user] ?? now
+      removalPendingSince[user] = since
+      if now.timeIntervalSince(since) >= Self.micUserRemovalConfirmationSeconds {
+        confirmedRemovals.insert(user)
+      }
     }
+    for user in observed { removalPendingSince[user] = nil }
 
-    // last == true, !inUse — accumulate idle time; any flap back to inUse clears the clock above.
-    if thirdPartyMicIdleSince == nil {
-      thirdPartyMicIdleSince = Date()
-    }
-    guard let since = thirdPartyMicIdleSince,
-          Date().timeIntervalSince(since) >= Self.thirdPartyMicIdleConfirmationSeconds
-    else {
-      return
-    }
-    thirdPartyMicIdleSince = nil
-    lastEmittedState = false
-    print("[MacHelper] mic usage (third-party) changed -> false")
-    onUsageChanged?(false)
+    guard !added.isEmpty || !confirmedRemovals.isEmpty else { return }
+
+    current.formUnion(added)
+    current.subtract(confirmedRemovals)
+    for user in confirmedRemovals { removalPendingSince[user] = nil }
+    emittedUsers = current
+    print("[MacHelper] mic users -> \(Self.describe(current)) added=\(Self.describe(added))")
+    onUsersChanged?(current, added)
+  }
+
+  private static func describe(_ users: Set<MicUser>) -> String {
+    users.isEmpty ? "[]" : users.map(\.displayName).sorted().joined(separator: ", ")
   }
 
   // MARK: - CoreAudio queries
 
-  private static func isThirdPartyMicInUse() -> Bool {
-    for processID in audioProcessObjectIDs() {
-      if isOwnProcess(processID) {
-        continue
-      }
-      if isProcessRunningInput(processID) {
-        return true
-      }
-    }
-    return false
-  }
-
-  /// Returns the display name of the first third-party process actively using
-  /// the microphone, or `nil` if none is found.
-  static func firstThirdPartyAppName() -> String? {
+  private static func thirdPartyMicUsers() -> Set<MicUser> {
+    var users: Set<MicUser> = []
     for processID in audioProcessObjectIDs() {
       if isOwnProcess(processID) { continue }
       if !isProcessRunningInput(processID) { continue }
-      guard let pid = pidProperty(processID) else { continue }
+      if let user = resolveMicUser(processID) { users.insert(user) }
+    }
+    return users
+  }
 
-      let directApp = NSRunningApplication(processIdentifier: pid_t(pid))
-      let directName = directApp?.localizedName
+  /// Resolves one audio process to its user-facing app.
+  private static func resolveMicUser(_ processID: AudioObjectID) -> MicUser? {
+    guard let pid = pidProperty(processID) else { return nil }
 
-      // If the direct lookup gives a helper/renderer name (e.g. "Google Chrome
-      // Helper (Renderer)"), or if there is no NSApp at all, prefer a bundle-ID
-      // parent lookup so the user sees "Google Chrome" instead.
-      let looksLikeHelper = directApp == nil || directName?.contains("Helper") == true
+    let directApp = NSRunningApplication(processIdentifier: pid_t(pid))
+    let directName = directApp?.localizedName
 
-      if looksLikeHelper,
-         let bundleID = stringProperty(processID, selector: kAudioProcessPropertyBundleID) {
-        // Strip last component: com.google.Chrome.helper -> com.google.Chrome
-        if let dot = bundleID.range(of: ".", options: .backwards) {
-          let parent = String(bundleID[..<dot.lowerBound])
-          if let app = NSRunningApplication.runningApplications(withBundleIdentifier: parent).first {
-            return app.localizedName ?? parent
-          }
-        }
-        // Exact bundle ID lookup as fallback
-        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-          return app.localizedName ?? bundleID
+    // Helper/renderer names resolve via bundle-ID parent so we show "Google Chrome".
+    let looksLikeHelper = directApp == nil || directName?.contains("Helper") == true
+
+    if looksLikeHelper,
+       let bundleID = stringProperty(processID, selector: kAudioProcessPropertyBundleID) {
+      // Strip last component: com.google.Chrome.helper -> com.google.Chrome
+      if let dot = bundleID.range(of: ".", options: .backwards) {
+        let parent = String(bundleID[..<dot.lowerBound])
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: parent).first {
+          return MicUser(id: parent, displayName: app.localizedName ?? parent)
         }
       }
-
-      // Regular app: use the direct PID lookup result
-      if let name = directName ?? directApp?.bundleIdentifier {
-        return name
+      // Exact bundle ID lookup as fallback
+      if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+        return MicUser(id: bundleID, displayName: app.localizedName ?? bundleID)
       }
+    }
+
+    // Regular app: use the direct PID lookup result.
+    if let name = directName ?? directApp?.bundleIdentifier {
+      return MicUser(id: directApp?.bundleIdentifier ?? name, displayName: name)
     }
     return nil
   }

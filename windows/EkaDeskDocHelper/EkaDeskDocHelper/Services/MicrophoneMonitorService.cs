@@ -98,10 +98,6 @@ internal sealed class MicrophoneMonitorService : IDisposable
                     {
                         _overlayStateStore?.SetPrompt(usage.TriggeringAppName, source: "microphone");
                     }
-                    else if (usage.IsDecrease && _overlayStateStore?.Current == OverlayUiState.Prompt)
-                    {
-                        _overlayStateStore?.Set(null, source: "microphone");
-                    }
                 }
             }
 
@@ -234,7 +230,7 @@ internal sealed class MicrophoneMonitorService : IDisposable
             return;
         }
 
-        var commandName = usage.IsDecrease && isRecording
+        var commandName = !usage.IsInUse && isRecording
                 ? "recording.stop"
                 : null;
 

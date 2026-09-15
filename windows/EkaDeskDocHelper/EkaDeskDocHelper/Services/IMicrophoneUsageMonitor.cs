@@ -26,6 +26,5 @@ internal sealed class MicrophoneUsageChangedEventArgs : EventArgs
     public int CurrentActiveSessions { get; }
     public string? TriggeringAppName { get; }
     public bool IsIncrease => CurrentActiveSessions > PreviousActiveSessions;
-    public bool IsDecrease => CurrentActiveSessions < PreviousActiveSessions;
 }
 

@@ -22,7 +22,8 @@ struct DeskDocOverlayApp: App {
   }
 }
 
-private let ownerPidFile = "/tmp/deskdoc-pill-owner.pid"
+// Must match OWNER_PID_FILE in src/main/managers/nativeHelperManager.ts.
+private let ownerPidFile = "/tmp/deskdoc-pill-owner.vaarta.pid"
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -103,9 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     let monitor = MacMicrophoneUsageMonitor()
-    monitor.onUsageChanged = { [weak self] inUse in
+    monitor.onUsersChanged = { [weak self] current, added in
       Task { @MainActor [weak self] in
-        self?.appState.handleMicUsageChanged(inUse)
+        self?.appState.handleMicUsersChanged(current: current, added: added)
       }
     }
     monitor.start()

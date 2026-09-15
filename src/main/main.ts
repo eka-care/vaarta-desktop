@@ -135,6 +135,7 @@ const MAIN_WINDOW_MIN_WIDTH = 1024;
 const MAIN_WINDOW_MIN_HEIGHT = 660;
 const DOTNET_REQUIRED_MAJOR_VERSION = 10;
 let recordingRunning = false;
+let isQuitting = false;
 const SHORTCUT_STOP_DEBOUNCE_MS = 5000;
 let shortcutRecordingStartedAt: number | null = null;
 
@@ -881,6 +882,12 @@ const createWindow = async () => {
   if (!app.isPackaged) {
     mainWindow.webContents.openDevTools();
   }
+  // Hide instead of destroying so reopening doesn't reload the whole web app.
+  mainWindow.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    mainWindow.hide();
+  });
   mainWindow.on('closed', () => {
     detachFocusTracker();
     if (mainWindowRef === mainWindow) {
@@ -1858,6 +1865,9 @@ app.on('will-quit', () => {
   globalShortcut.unregister(PAUSE_RESUME_SCRIBE_ACCELERATOR);
   cleanupAutoUpdates();
 });
+
+// quitAndInstall() calls app.quit(), so this covers the updater too.
+app.on('before-quit', () => { isQuitting = true; });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
