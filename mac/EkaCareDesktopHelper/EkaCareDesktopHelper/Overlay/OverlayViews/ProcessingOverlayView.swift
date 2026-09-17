@@ -22,7 +22,7 @@ struct ProcessingOverlayView: View {
           }
           .buttonStyle(.plain)
           .focusable(false)
-          .help("Open EkaScribe")
+          .help("Open Vaarta")
 
           Circle()
             .trim(from: 0, to: 0.75)

@@ -78,7 +78,7 @@ struct RecordingOverlayView: View {
     }
     .buttonStyle(.plain)
     .focusable(false)
-    .help("Open EkaScribe")
+    .help("Open Vaarta")
 
     RecordingWaveformGifView(width: 36, height: 36, isAnimating: !isPaused)
       .frame(width: 36, height: 36)

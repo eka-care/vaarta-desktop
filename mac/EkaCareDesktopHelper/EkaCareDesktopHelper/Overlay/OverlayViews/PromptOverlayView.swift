@@ -53,7 +53,7 @@ struct PromptOverlayView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
-            .help("Open EkaScribe")
+            .help("Open Vaarta")
 
             // Title + optional app name
             VStack(alignment: .leading, spacing: 2) {

@@ -38,7 +38,7 @@ struct ProcessedOverlayView: View {
             }
             .buttonStyle(.plain)
             .focusable(false)
-            .help("Open EkaScribe")
+            .help("Open Vaarta")
 
             VStack(alignment: .leading, spacing: 0) {
               Text("Session completed")
