@@ -31,7 +31,7 @@ struct OverlayCardFooterBar: View {
       }
       .buttonStyle(.plain)
       .focusable(false)
-      .help("Open EkaScribe")
+      .help("Open Vaarta")
 
       Spacer()
 

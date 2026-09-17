@@ -44,7 +44,7 @@ final class BridgeAppState: ObservableObject {
   private static let startRecordingDeepLink = "ekadoc://recording?command=start-recording&source=overlay"
   private static let scribeResultDeepLink = "ekadoc://"
   /// Matches `build.appId` in the root `package.json` (electron-builder).
-  private static let electronHostBundleIdentifier = "care.eka.ekascribe"
+  private static let electronHostBundleIdentifier = "care.eka.vaarta"
 
   @Published private(set) var phase: ScribePhase = .idle
   @Published private(set) var sessionId: String = ""
@@ -55,8 +55,9 @@ final class BridgeAppState: ObservableObject {
   private var pendingStartCommandCount = 0
   private var isElectronFocused: Bool = false
   private var isMicInUse = false
-  /// Normalized app name the user dismissed the mic prompt for (current mic session).
-  private var promptDismissedForAppName: String?
+  /// Apps dismissed for; cleared per-app on mic release. "" means app unresolved.
+  private var dismissedApps: Set<String> = []
+  private var micUsers: Set<MicUser> = []
   private var processingTimer: DispatchSourceTimer?
   private var lastStartSentAt = Date.distantPast
   private var lastPauseToggleSentAt = Date.distantPast
@@ -230,7 +231,7 @@ final class BridgeAppState: ObservableObject {
     // on the next refreshOverlayVisibility() call while the phase is still .processing.
     switch phase {
     case .idle:
-      promptDismissedForAppName = Self.normalizedPromptAppName(triggeringAppName) ?? ""
+      dismissedApps.insert(Self.normalizedPromptAppName(triggeringAppName) ?? "")
     case .error, .completed, .processing:
       phase = .idle
     default:
@@ -310,35 +311,46 @@ final class BridgeAppState: ObservableObject {
     }
   }
 
-  func handleMicUsageChanged(_ inUse: Bool) {
+  func handleMicUsersChanged(current: Set<MicUser>, added: Set<MicUser>) {
+    let wasInUse = isMicInUse
+    micUsers = current
+    let inUse = !current.isEmpty
     isMicInUse = inUse
+
+    let liveNames = Set(current.compactMap { Self.normalizedPromptAppName($0.displayName) })
+    dismissedApps = dismissedApps.filter { $0.isEmpty ? inUse : liveNames.contains($0) }
+
     if inUse {
-      let appName = MacMicrophoneUsageMonitor.firstThirdPartyAppName()
-      if let newApp = Self.normalizedPromptAppName(appName),
-         let dismissed = promptDismissedForAppName,
-         !dismissed.isEmpty,
-         newApp != dismissed {
-        // A different third-party app took the mic — allow a fresh prompt.
-        promptDismissedForAppName = nil
+      if !wasInUse {
+        // fresh mic session — drop stale pending-start from the previous one
+        hasPendingStartCommand = false
+        pendingStartCommandCount = 0
       }
-      triggeringAppName = appName
-      // Reset stale pending-start state from a previous cycle.
-      hasPendingStartCommand = false
-      pendingStartCommandCount = 0
+      if case .recording = phase {
+        // keep the prompt app fixed mid-session
+      } else if let newcomer = Self.arrivingTrigger(from: added) {
+        triggeringAppName = newcomer.displayName
+      } else if triggeringAppName == nil
+                  || !current.contains(where: { $0.displayName == triggeringAppName }) {
+        triggeringAppName = Self.fallbackTrigger(from: current)?.displayName
+      }
     } else {
       triggeringAppName = nil
-      promptDismissedForAppName = nil
+      dismissedApps.removeAll()
     }
     // Reflect microphone-edge changes immediately.
     refreshOverlayVisibility()
-    let payload: [String: Any] = ["isInUse": inUse, "source": "microphone"]
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      await bridgeClient?.sendEvent(name: "microphone.usage.changed", payload: payload)
-      print("[MacHelper] -> event microphone.usage.changed isInUse=\(inUse)")
+    if inUse != wasInUse {
+      let payload: [String: Any] = ["isInUse": inUse, "source": "microphone"]
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        await bridgeClient?.sendEvent(name: "microphone.usage.changed", payload: payload)
+        print("[MacHelper] -> event microphone.usage.changed isInUse=\(inUse)")
+      }
     }
 
     if inUse {
+      guard !added.isEmpty else { return }
       Task { @MainActor [weak self] in
         guard let self else { return }
         let snapshot = await fetchScribeStatus()
@@ -375,6 +387,8 @@ final class BridgeAppState: ObservableObject {
       return
     }
 
+    guard wasInUse else { return }
+
     // Third-party mic released — stop if we're trying to record.
     let weAreTryingToRecord: Bool = {
       if case .recording = phase { return true }
@@ -399,6 +413,8 @@ final class BridgeAppState: ObservableObject {
         && !isPromptDismissedForCurrentApp()
         && (canPresentPromptOverlay?() ?? true)
         && !DisabledAppsPreferencesStore.shared.isDisabled(triggeringAppName ?? "")
+        // triggeringAppName is frozen during a session, so it may name an app that has left.
+        && micUsers.contains { $0.displayName == triggeringAppName }
       next = canPrompt ? .prompt : .hidden
     case .recording:
       next = .recording
@@ -437,6 +453,19 @@ final class BridgeAppState: ObservableObject {
 
   // MARK: - Private helpers
 
+  /// Disabled arrivals never re-target, so they can't hide a live prompt.
+  private static func arrivingTrigger(from users: Set<MicUser>) -> MicUser? {
+    users.sorted { $0.id < $1.id }
+      .first { !DisabledAppsPreferencesStore.shared.isDisabled($0.displayName) }
+  }
+
+  /// Falls back to a disabled app, not nil — the name is what suppresses the prompt.
+  private static func fallbackTrigger(from users: Set<MicUser>) -> MicUser? {
+    let sorted = users.sorted { $0.id < $1.id }
+    return sorted.first { !DisabledAppsPreferencesStore.shared.isDisabled($0.displayName) }
+      ?? sorted.first
+  }
+
   private static func normalizedPromptAppName(_ name: String?) -> String? {
     guard let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
       return nil
@@ -445,13 +474,11 @@ final class BridgeAppState: ObservableObject {
   }
 
   private func isPromptDismissedForCurrentApp() -> Bool {
-    guard let dismissed = promptDismissedForAppName else { return false }
-    if dismissed.isEmpty {
-      // Dismissed before we resolved the triggering app — suppress until mic release.
-      return true
-    }
+    if dismissedApps.isEmpty { return false }
+    // Dismissed before we resolved the triggering app — suppress until mic release.
+    if dismissedApps.contains("") { return true }
     guard let current = Self.normalizedPromptAppName(triggeringAppName) else { return true }
-    return dismissed == current
+    return dismissedApps.contains(current)
   }
 
   private func manageProcessingTimeout() {

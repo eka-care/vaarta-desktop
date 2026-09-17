@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 
@@ -7,12 +8,17 @@ namespace EkaDeskDocHelper.Services;
 
 internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
 {
+    // Mic must stay idle this long before we report "not in use" — meeting apps briefly release it on audio reconnect.
+    private static readonly TimeSpan IdleConfirmationWindow = TimeSpan.FromSeconds(2);
+
     private readonly object _gate = new();
 
     private Thread? _workerThread;
     private CancellationTokenSource? _cts;
     private bool _micActive;
     private int _activeSessionCount;
+    private HashSet<uint> _activePids = new();
+    private DateTime? _idleSince;
 
     private bool _started;
     private bool _disposed;
@@ -96,15 +102,35 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
 
         var isActive = activeCount > 0;
         var raiseChanged = false;
+        var hasNewSession = false;
         var previousActiveCount = 0;
 
         lock (_gate)
         {
             if (_disposed) return;
-            if (activeCount == _activeSessionCount) return;
 
+            if (isActive)
+            {
+                _idleSince = null;
+            }
+            else if (_activeSessionCount == 0)
+            {
+                _idleSince = null;
+                return;
+            }
+            else
+            {
+                _idleSince ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - _idleSince.Value < IdleConfirmationWindow) return;
+                _idleSince = null;
+            }
+
+            if (activePidSet.SetEquals(_activePids)) return;
+
+            hasNewSession = activePidSet.Any(pid => !_activePids.Contains(pid));
             previousActiveCount = _activeSessionCount;
             _activeSessionCount = activeCount;
+            _activePids = activePidSet;
             _micActive = isActive;
             raiseChanged = true;
             if (isActive)
@@ -122,7 +148,8 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
                     isActive,
                     previousActiveCount,
                     activeCount,
-                    appName));
+                    appName,
+                    hasNewSession));
         }
     }
 
@@ -228,6 +255,8 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
         try { _cts?.Cancel(); } catch { /* ignore */ }
         _cts?.Dispose();
         _cts = null;
+        _idleSince = null;
+        _activePids = new HashSet<uint>();
 
         // Don't Join() on UI thread; just let background thread exit.
         _workerThread = null;

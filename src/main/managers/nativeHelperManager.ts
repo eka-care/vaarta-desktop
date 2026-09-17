@@ -36,10 +36,54 @@ export function setMacOverlayChildSpawnedHook(hook: MacOverlayChildSpawnedHook |
 }
 
 const MAC_OVERLAY_APP_NAME = 'EkaCareDesktopHelper';
-const OWNER_PID_FILE = '/tmp/deskdoc-pill-owner.pid';
+const OWNER_PID_FILE = '/tmp/deskdoc-pill-owner.vaarta.pid';
 const HELPER_APP_BUNDLE_NAME = 'EkaCareDesktopHelper.app';
 let bottomViewVisible = false;
 let macOverlayProcess: ReturnType<typeof spawn> | null = null;
+let macOverlayIntentionalQuit = false;
+let macOverlayLaunching = false;
+let macOverlayRestartCount = 0;
+let macOverlayRestartWindowStartedAtMs = 0;
+let macOverlayRestartTimer: NodeJS.Timeout | null = null;
+const MAC_OVERLAY_RESTART_LIMIT = 3;
+const MAC_OVERLAY_RESTART_WINDOW_MS = 60_000;
+
+function cancelMacOverlayRestart(): void {
+  if (macOverlayRestartTimer) {
+    clearTimeout(macOverlayRestartTimer);
+    macOverlayRestartTimer = null;
+  }
+}
+
+// The helper dying used to leave the overlay gone until the app was relaunched.
+function scheduleMacOverlayRestart(reason: Record<string, unknown>): void {
+  const now = Date.now();
+  if (now - macOverlayRestartWindowStartedAtMs > MAC_OVERLAY_RESTART_WINDOW_MS) {
+    macOverlayRestartWindowStartedAtMs = now;
+    macOverlayRestartCount = 0;
+  }
+  if (macOverlayRestartCount >= MAC_OVERLAY_RESTART_LIMIT) {
+    logOverlayHelper('mac overlay restart limit reached', reason);
+    return;
+  }
+  macOverlayRestartCount += 1;
+  const delayMs = 1000 * macOverlayRestartCount;
+  logOverlayHelper('scheduling mac overlay restart', { ...reason, attempt: macOverlayRestartCount, delayMs });
+  cancelMacOverlayRestart();
+  macOverlayRestartTimer = setTimeout(() => {
+    macOverlayRestartTimer = null;
+    if (macOverlayIntentionalQuit) return;
+    launchNativeBottomView();
+  }, delayMs);
+}
+
+// killall matches by process name, which is identical in every app bundling this
+// helper. Scope to our own executable path so we never kill another app's helper.
+function killHelperAtPath(helperExecutablePath: string, done: () => void): void {
+  // Anchored at the start only — the helper runs with trailing args (--bridge-stdio).
+  const pattern = `^${helperExecutablePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
+  execFile('pkill', ['-f', pattern], () => done());
+}
 
 function getMacHelperAppCandidates(): string[] {
   const cwd = process.cwd();
@@ -137,6 +181,11 @@ export function removeOwnerPidFile(): void {
 
 export function launchNativeBottomView(): void {
   if (process.platform !== 'darwin') return;
+  // macOverlayProcess is only set in the async spawn callback, so guard the gap too.
+  if (macOverlayLaunching) return;
+  if (macOverlayProcess && !macOverlayProcess.killed) return;
+  macOverlayIntentionalQuit = false;
+  cancelMacOverlayRestart();
   writeOwnerPidFile();
   const helperExecutablePath = getMacHelperExecutablePath();
   if (!helperExecutablePath) {
@@ -152,7 +201,9 @@ export function launchNativeBottomView(): void {
 
   // Stdio bridge requires Electron to own the helper, so kill any stale instance
   // (e.g. from a crashed previous run) before spawning a fresh child.
-  execFile('killall', [MAC_OVERLAY_APP_NAME], () => {
+  macOverlayLaunching = true;
+  killHelperAtPath(helperExecutablePath, () => {
+    macOverlayLaunching = false;
     const launchedProcess = spawn(helperExecutablePath, bridgeArgs, {
       cwd: helperExecDir,
       detached: false,
@@ -179,11 +230,12 @@ export function launchNativeBottomView(): void {
         bottomViewVisible = false;
       }
     });
-    launchedProcess.on('exit', () => {
-      if (macOverlayProcess?.pid === launchedProcess.pid) {
-        macOverlayProcess = null;
-        bottomViewVisible = false;
-      }
+    launchedProcess.on('exit', (code, signal) => {
+      if (macOverlayProcess?.pid !== launchedProcess.pid) return;
+      macOverlayProcess = null;
+      bottomViewVisible = false;
+      if (macOverlayIntentionalQuit) return;
+      scheduleMacOverlayRestart({ code, signal });
     });
   });
 }
@@ -202,6 +254,8 @@ export function ensureNativeHelperLoginItem(): void {
 export function quitNativeOverlayHelper(): void {
   if (process.platform !== 'darwin') return;
   bottomViewVisible = false;
+  macOverlayIntentionalQuit = true;
+  cancelMacOverlayRestart();
   removeOwnerPidFile();
   const runningProcess = macOverlayProcess;
   if (runningProcess && !runningProcess.killed) {
@@ -213,9 +267,12 @@ export function quitNativeOverlayHelper(): void {
       macOverlayProcess = null;
     }
   }
-  execFile('killall', [MAC_OVERLAY_APP_NAME], () => {
-    // best effort
-  });
+  const helperExecutablePath = getMacHelperExecutablePath();
+  if (helperExecutablePath) {
+    killHelperAtPath(helperExecutablePath, () => {
+      // best effort
+    });
+  }
 }
 
 export function toggleBottomView(): void {

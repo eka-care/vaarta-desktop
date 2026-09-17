@@ -92,15 +92,11 @@ internal sealed class MicrophoneMonitorService : IDisposable
                 {
                     CancelClearPromptDismissal();
                     MaybeClearDismissalForDifferentApp(usage.TriggeringAppName);
-                    if (usage.IsIncrease
+                    if (usage.HasNewSession
                         && !IsPromptDismissedForApp(usage.TriggeringAppName)
                         && await ShouldShowPromptOverlayAsync(usage.TriggeringAppName).ConfigureAwait(false))
                     {
                         _overlayStateStore?.SetPrompt(usage.TriggeringAppName, source: "microphone");
-                    }
-                    else if (usage.IsDecrease && _overlayStateStore?.Current == OverlayUiState.Prompt)
-                    {
-                        _overlayStateStore?.Set(null, source: "microphone");
                     }
                 }
             }
@@ -234,7 +230,7 @@ internal sealed class MicrophoneMonitorService : IDisposable
             return;
         }
 
-        var commandName = usage.IsDecrease && isRecording
+        var commandName = !usage.IsInUse && isRecording
                 ? "recording.stop"
                 : null;
 

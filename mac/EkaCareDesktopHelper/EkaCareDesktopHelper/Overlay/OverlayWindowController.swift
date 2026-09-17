@@ -26,6 +26,7 @@ final class OverlayWindowController: NSWindowController {
   private let layoutStore: OverlayLayoutPreferencesStore
   private var cancellables = Set<AnyCancellable>()
   private let topPadding: CGFloat
+  private static let rightPadding: CGFloat = 16
 
   init(
     appState: BridgeAppState,
@@ -218,7 +219,8 @@ final class OverlayWindowController: NSWindowController {
       return NSRect(origin: clamped, size: size)
     }
 
-    let x = screen.frame.midX - (size.width / 2)
+    // Top-right by default so it doesn't sit on top of EkaScribe's top-centre widget.
+    let x = screen.visibleFrame.maxX - size.width - Self.rightPadding
     let y = screen.frame.maxY - topPadding - size.height
 
     return NSRect(x: x, y: y, width: size.width, height: size.height)
