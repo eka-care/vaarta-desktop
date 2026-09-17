@@ -44,7 +44,7 @@ final class BridgeAppState: ObservableObject {
   private static let startRecordingDeepLink = "ekadoc://recording?command=start-recording&source=overlay"
   private static let scribeResultDeepLink = "ekadoc://"
   /// Matches `build.appId` in the root `package.json` (electron-builder).
-  private static let electronHostBundleIdentifier = "care.eka.ekascribe"
+  private static let electronHostBundleIdentifier = "care.eka.vaarta"
 
   @Published private(set) var phase: ScribePhase = .idle
   @Published private(set) var sessionId: String = ""
@@ -340,11 +340,13 @@ final class BridgeAppState: ObservableObject {
     }
     // Reflect microphone-edge changes immediately.
     refreshOverlayVisibility()
-    let payload: [String: Any] = ["isInUse": inUse, "source": "microphone"]
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      await bridgeClient?.sendEvent(name: "microphone.usage.changed", payload: payload)
-      print("[MacHelper] -> event microphone.usage.changed isInUse=\(inUse)")
+    if inUse != wasInUse {
+      let payload: [String: Any] = ["isInUse": inUse, "source": "microphone"]
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        await bridgeClient?.sendEvent(name: "microphone.usage.changed", payload: payload)
+        print("[MacHelper] -> event microphone.usage.changed isInUse=\(inUse)")
+      }
     }
 
     if inUse {
@@ -411,6 +413,8 @@ final class BridgeAppState: ObservableObject {
         && !isPromptDismissedForCurrentApp()
         && (canPresentPromptOverlay?() ?? true)
         && !DisabledAppsPreferencesStore.shared.isDisabled(triggeringAppName ?? "")
+        // triggeringAppName is frozen during a session, so it may name an app that has left.
+        && micUsers.contains { $0.displayName == triggeringAppName }
       next = canPrompt ? .prompt : .hidden
     case .recording:
       next = .recording

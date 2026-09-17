@@ -92,7 +92,7 @@ internal sealed class MicrophoneMonitorService : IDisposable
                 {
                     CancelClearPromptDismissal();
                     MaybeClearDismissalForDifferentApp(usage.TriggeringAppName);
-                    if (usage.IsIncrease
+                    if (usage.HasNewSession
                         && !IsPromptDismissedForApp(usage.TriggeringAppName)
                         && await ShouldShowPromptOverlayAsync(usage.TriggeringAppName).ConfigureAwait(false))
                     {

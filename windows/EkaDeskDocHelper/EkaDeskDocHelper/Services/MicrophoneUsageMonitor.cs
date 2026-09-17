@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 
@@ -16,6 +17,7 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
     private CancellationTokenSource? _cts;
     private bool _micActive;
     private int _activeSessionCount;
+    private HashSet<uint> _activePids = new();
     private DateTime? _idleSince;
 
     private bool _started;
@@ -100,6 +102,7 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
 
         var isActive = activeCount > 0;
         var raiseChanged = false;
+        var hasNewSession = false;
         var previousActiveCount = 0;
 
         lock (_gate)
@@ -122,10 +125,12 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
                 _idleSince = null;
             }
 
-            if (activeCount == _activeSessionCount) return;
+            if (activePidSet.SetEquals(_activePids)) return;
 
+            hasNewSession = activePidSet.Any(pid => !_activePids.Contains(pid));
             previousActiveCount = _activeSessionCount;
             _activeSessionCount = activeCount;
+            _activePids = activePidSet;
             _micActive = isActive;
             raiseChanged = true;
             if (isActive)
@@ -143,7 +148,8 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
                     isActive,
                     previousActiveCount,
                     activeCount,
-                    appName));
+                    appName,
+                    hasNewSession));
         }
     }
 
@@ -250,6 +256,7 @@ internal sealed class MicrophoneUsageMonitor : IMicrophoneUsageMonitor
         _cts?.Dispose();
         _cts = null;
         _idleSince = null;
+        _activePids = new HashSet<uint>();
 
         // Don't Join() on UI thread; just let background thread exit.
         _workerThread = null;

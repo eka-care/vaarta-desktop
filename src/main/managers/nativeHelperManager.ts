@@ -41,6 +41,7 @@ const HELPER_APP_BUNDLE_NAME = 'EkaCareDesktopHelper.app';
 let bottomViewVisible = false;
 let macOverlayProcess: ReturnType<typeof spawn> | null = null;
 let macOverlayIntentionalQuit = false;
+let macOverlayLaunching = false;
 let macOverlayRestartCount = 0;
 let macOverlayRestartWindowStartedAtMs = 0;
 let macOverlayRestartTimer: NodeJS.Timeout | null = null;
@@ -180,6 +181,8 @@ export function removeOwnerPidFile(): void {
 
 export function launchNativeBottomView(): void {
   if (process.platform !== 'darwin') return;
+  // macOverlayProcess is only set in the async spawn callback, so guard the gap too.
+  if (macOverlayLaunching) return;
   if (macOverlayProcess && !macOverlayProcess.killed) return;
   macOverlayIntentionalQuit = false;
   cancelMacOverlayRestart();
@@ -198,7 +201,9 @@ export function launchNativeBottomView(): void {
 
   // Stdio bridge requires Electron to own the helper, so kill any stale instance
   // (e.g. from a crashed previous run) before spawning a fresh child.
+  macOverlayLaunching = true;
   killHelperAtPath(helperExecutablePath, () => {
+    macOverlayLaunching = false;
     const launchedProcess = spawn(helperExecutablePath, bridgeArgs, {
       cwd: helperExecDir,
       detached: false,

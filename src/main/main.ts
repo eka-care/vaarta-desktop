@@ -136,6 +136,9 @@ const MAIN_WINDOW_MIN_HEIGHT = 660;
 const DOTNET_REQUIRED_MAJOR_VERSION = 10;
 let recordingRunning = false;
 let isQuitting = false;
+let quitAfterRecordingStops = false;
+let quitStopTimer: NodeJS.Timeout | null = null;
+const QUIT_STOP_TIMEOUT_MS = 10_000;
 const SHORTCUT_STOP_DEBOUNCE_MS = 5000;
 let shortcutRecordingStartedAt: number | null = null;
 
@@ -884,8 +887,22 @@ const createWindow = async () => {
   }
   // Hide instead of destroying so reopening doesn't reload the whole web app.
   mainWindow.on('close', (event) => {
-    if (isQuitting) return;
+    if (isQuitting || recordingRunning) return;
     event.preventDefault();
+    // Hiding a full-screen window leaves its Space behind as a black screen.
+    if (mainWindow.isFullScreen()) {
+      mainWindow.once('leave-full-screen', () => {
+        if (!mainWindow.isDestroyed()) mainWindow.hide();
+      });
+      mainWindow.setFullScreen(false);
+      return;
+    }
+    // Windows: minimise rather than hide — a tray icon lands in the hidden-icons
+    // overflow, so hiding leaves no visible way back and reads as "app quit".
+    if (process.platform === 'win32') {
+      mainWindow.minimize();
+      return;
+    }
     mainWindow.hide();
   });
   mainWindow.on('closed', () => {
@@ -1559,6 +1576,13 @@ app.on('ready', async () => {
     recordingRunning = status === 'recording' || status === 'recording_paused' || status === 'paused';
     if (!recordingRunning) {
       shortcutRecordingStartedAt = null;
+      // A quit was waiting on this recording to stop.
+      if (quitAfterRecordingStops) {
+        quitAfterRecordingStops = false;
+        if (quitStopTimer) { clearTimeout(quitStopTimer); quitStopTimer = null; }
+        logOverlayHelper('recording stopped; resuming deferred quit');
+        app.quit();
+      }
     }
     console.log('[menu] scribe:statusUpdate', { processingStatus, recordingRunning });
     syncRecordingMenus();
@@ -1867,7 +1891,31 @@ app.on('will-quit', () => {
 });
 
 // quitAndInstall() calls app.quit(), so this covers the updater too.
-app.on('before-quit', () => { isQuitting = true; });
+app.on('before-quit', (event) => {
+  // Quitting mid-recording would be blocked by the renderer's beforeunload and look
+  // like nothing happened. Stop the session first, then quit when it reports stopped.
+  if (recordingRunning && !quitAfterRecordingStops) {
+    event.preventDefault();
+    quitAfterRecordingStops = true;
+    isQuitting = false;
+    logOverlayHelper('quit requested during recording; stopping session first');
+    sendScribeCommandToRenderer('stop', 'app-quit');
+    quitStopTimer = setTimeout(() => {
+      quitAfterRecordingStops = false;
+      quitStopTimer = null;
+      logOverlayHelper('recording did not stop before quit timeout; forcing quit');
+      isQuitting = true;
+      const win = mainWindowRef;
+      // destroy() bypasses the renderer's beforeunload, which would veto the quit again.
+      if (win && !win.isDestroyed()) win.destroy();
+      app.quit();
+    }, QUIT_STOP_TIMEOUT_MS);
+    return;
+  }
+  isQuitting = true;
+  // Surviving the timer means the quit was vetoed, so un-arm it.
+  setTimeout(() => { isQuitting = false; }, 1000);
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
