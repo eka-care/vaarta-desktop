@@ -888,6 +888,9 @@ const createWindow = async () => {
   // Hide instead of destroying so reopening doesn't reload the whole web app.
   mainWindow.on('close', (event) => {
     if (isQuitting || recordingRunning) return;
+    // Windows: X quits, per platform convention. During a recording the guard above
+    // lets the close reach the renderer, whose beforeunload blocks it.
+    if (process.platform === 'win32') return;
     event.preventDefault();
     // Hiding a full-screen window leaves its Space behind as a black screen.
     if (mainWindow.isFullScreen()) {
@@ -895,12 +898,6 @@ const createWindow = async () => {
         if (!mainWindow.isDestroyed()) mainWindow.hide();
       });
       mainWindow.setFullScreen(false);
-      return;
-    }
-    // Windows: minimise rather than hide — a tray icon lands in the hidden-icons
-    // overflow, so hiding leaves no visible way back and reads as "app quit".
-    if (process.platform === 'win32') {
-      mainWindow.minimize();
       return;
     }
     mainWindow.hide();
